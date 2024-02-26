@@ -8,6 +8,11 @@ credentials = service_account.Credentials.from_service_account_info(
 )
 client = bigquery.Client(credentials=credentials)
 
+def bgcolor_positive_or_negative(value):
+    # print (value)
+    bgcolor = "darkgreen" if value < 0 else "darkred"
+    return f"background-color: {bgcolor};"
+
 # Uses st.cache_data to only rerun when the query changes or after 10 min.
 @st.cache_data(ttl=600)
 def run_query(query):
@@ -18,35 +23,71 @@ def run_query(query):
 
 st.set_page_config(layout="wide")
 
-budget_performance = run_query(
+budget_performance = pd.DataFrame(run_query(
     """
-    SELECT category_title, budgeted_amount, expected_amount, actual_amount, actual_amount - expected_amount as progress 
+    SELECT 
+    category_title as Category, 
+    budgeted_amount as Budgeted, 
+    expected_amount as Expected, 
+    actual_amount as Actual, 
+    actual_amount - expected_amount as Progress 
     FROM finances.vw_monthly_budget_performance
+    UNION ALL
+    SELECT 'TOTAL', SUM(budgeted_amount), sum(expected_amount), sum(actual_amount), sum(actual_amount) - sum(expected_amount)
+    from finances.vw_monthly_budget_performance
+    order by 2
     """
-)
+))
 
-daily_progress = run_query(
+subcategory_amounts = pd.DataFrame(run_query(
     """
-    select day_number, expected_spend, actual_spend
-    from finances.daily_progress
+    SELECT category_title as Category, amount as Amount
+    FROM finances.vw_monthly_subcategory_amounts
     where month = date_trunc(current_date, month)
-    order by day_number
+    order by amount
     """
-)
+))
+
+# daily_progress = run_query(
+#     """
+#     select day_number, expected_spend, actual_spend
+#     from finances.daily_progress
+#     where month = date_trunc(current_date, month)
+#     order by day_number
+#     """
+# )
+
+budget_performance = budget_performance.style.applymap(bgcolor_positive_or_negative, subset=['Progress'])
 
 with st.container():
 
-    print (daily_progress)
+    # print (daily_progress)
 
     col1, col2 = st.columns(2)
 
     with col1:
-        st.table(budget_performance)
+        st.dataframe(
+            data=budget_performance, 
+            column_config={
+                "Budgeted": st.column_config.NumberColumn(format="$%.2f"),
+                "Expected": st.column_config.NumberColumn(format="$%.2f"),
+                "Actual": st.column_config.NumberColumn(format="$%.2f"),
+                "Progress": st.column_config.NumberColumn(format="$%.2f")
+            },
+            hide_index=True
+        )
 
     with col2:
-        df = pd.DataFrame(daily_progress)
-        print (df)
-        st.line_chart(df, x="day_number", y="expected_spend")
+        st.dataframe(
+            data=subcategory_amounts, 
+            # column_config={
+            #     "Budgeted": st.column_config.NumberColumn(format="$%.2f"),
+            #     "Expected": st.column_config.NumberColumn(format="$%.2f"),
+            #     "Actual": st.column_config.NumberColumn(format="$%.2f"),
+            #     "Progress": st.column_config.NumberColumn(format="$%.2f")
+            # },
+            hide_index=True
+        )
 
 # with st.container():
 
